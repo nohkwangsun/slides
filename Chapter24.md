@@ -303,18 +303,24 @@ fittedLR.transform(train).select("label", "prediction").show()
 
 ### 24.4.3 워크플로를 파이프라인으로 만들기
 
+- 여러 단계를 파이프라인으로 구성 가능
+- 파이프라인을 사용하면 튜닝된 모델을 얻을 수 있음
+- **변환자 객체** 나 **모델 객체** 가 다른 파이프라인에서 재사용되지 않는 것이 중요
+
 <img src="https://www.oreilly.com/library/view/spark-the-definitive/9781491912201/assets/spdg_2404.png" width=70% style="border: 1px solid gray">
+
+
+- 검증셋을 기반으로 하이퍼 파라미터 조정해야 하는데, 검증셋은 원시 데이터로 작업해야 함
 
 ```scala
 val Array(train, test) = df.randomSplit(Array(0.7, 0.3))
 ```
 
+- 파이프라인에 RFromula, Logistic Regression 두 개의 추정자를 넣어서 구성할 수 있음
 ```scala
 val rForm = new RFormula()
 val lr = new LogisticRegression().setLabelCol("label").setFeaturesCol("features")
-```
 
-```scala
 import org.apache.spark.ml.Pipeline
 val stages = Array(rForm, lr)
 val pipeline = new Pipeline().setStages(stages)
@@ -328,6 +334,9 @@ output :
 
 ### 24.4.4 모델 학습 및 평가
 
+- 다양한 하이퍼파라미터의 조합을 지정해 다양한 모델을 학습
+- 평가기를 사용하여 **검증셋**으로 각 모델의 예측 결과를 비교 후 최적의 모델 선택
+
 ```scala
 import org.apache.spark.ml.tuning.ParamGridBuilder
 val params = new ParamGridBuilder()
@@ -336,7 +345,7 @@ val params = new ParamGridBuilder()
     "lab ~ . + color:value1 + color:value2"))
   .addGrid(lr.elasticNetParam, Array(0.0, 0.5, 1.0))
   .addGrid(lr.regParam, Array(0.1, 2.0))
-  .build()
+  .build() // 2 x 3 x 2 가지 케이스
 ```
 ```console
 output :
@@ -364,6 +373,8 @@ output :
         ...
 ```
 
+- 평가기를 통해 객관적 기준으로 모델 비교 가능
+- 
 ```scala
 import org.apache.spark.ml.evaluation.BinaryClassificationEvaluator
 val evaluator = new BinaryClassificationEvaluator()
@@ -372,23 +383,26 @@ val evaluator = new BinaryClassificationEvaluator()
   .setLabelCol("label")
 ```
 
+- TrainValidationSplit : 데이터를 두개의 서로 다른 그룹으로 무작위로 임의 분할
+- CrossValidator는 데이터 집합을 겹치지 않게 임의로 구분된 k개의 폴드로 분할하여 교차 검증 수행
+
 ```scala
 import org.apache.spark.ml.tuning.TrainValidationSplit
 val tvs = new TrainValidationSplit()
   .setTrainRatio(0.75) // also the default.
-  .setEstimatorParamMaps(params)
-  .setEstimator(pipeline)
-  .setEvaluator(evaluator)
-```
+  .setEstimatorParamMaps(params) // 하이퍼파라미터 종류
+  .setEstimator(pipeline)        // 파이프라인
+  .setEvaluator(evaluator)       // 평가기
 
-```scala
-val tvsFitted = tvs.fit(train)
+val tvsFitted = tvs.fit(train) // 얻어진 최적 모델
 ```
 ```console
 output :
     tvsFitted: org.apache.spark.ml.tuning.TrainValidationSplitModel = tvs_a5fe5ed91927
 ```
 
+- 모델의 transform 으로 테스트세 데이터에 대해 예측
+- 예측한 DF를 평가기의 evalucate로 최종 모델 평가
 ```scala
 evaluator.evaluate(tvsFitted.transform(test))
 ```
@@ -397,6 +411,8 @@ output :
     res36: Double = 0.9666666666666667
 ```
 
+- 알고리즘이 최적의 모델을 도출하기 위해 진행하고 있는 과정을 확인 가능
+  
 ```scala
 import org.apache.spark.ml.PipelineModel
 import org.apache.spark.ml.classification.LogisticRegressionModel
@@ -418,11 +434,12 @@ output :
 
 ### 24.4.5 모델 저장 및 적용
 
+- **모델**을 디스크에 저장 가능
 ```scala
 tvsFitted.write.overwrite().save("/tmp/modelLocation")
 ```
-```console
 
+- 디스크에 저장된 **모델**을 로드하여 사용 가능
 ```scala
 import org.apache.spark.ml.tuning.TrainValidationSplitModel
 val model = TrainValidationSplitModel.load("/tmp/modelLocation")
