@@ -19,14 +19,45 @@
 
 ### 28.2 ALS 사용하여 CF 구현
 
+- ALS
+  - 사용자가 아직 평가하지 않은 아이템의 평점을 예측하는 데 사용할 수 있는 특징 벡터를 생성
+  - k 차원 특징 벡터 찾기 : ("아이템의 특징 벡터"와 "사용자의 특징 벡터"의 내적) ~근사~ (사용자의 평점)
+- 사용자,아이템 행렬에서의 수치
+  - 명시적 피드백 : 평점
+  - 암시적 피드백 : 방문수
+- 이슈
+  - 신제품 : cold start problem
+  - 신규 사용자 : first-rater problem
+- 장점
+  - 수백만명의 사용자, 아이템 처리 가능. 수십억 개의 평점 반영 가능.
+  - 병렬 처리 가능
+
 #### 28.2.1 하이퍼파라미터
+
+- rank : 특징 벡터 차원. 너무 크면 과적합, 너무 작으면 낮은 예측 (default : 10)
+- alpha : for 암시적 피드백 데이터, 기본 신뢰도 설정 (default : 10)
+- regParam : 모델 과적합 방지를 위한 일반화를 제어. (default : 0.1)
+- implicitPrefs : 데이터의 암시적 여부 (default : false)
+- nonnegative : 최소제곱 문제에 비음수 제약 조건 설정 (default : false)
 
 #### 28.2.2 학습 파라미터
 
+| 데이터 분산 방식을 저수준까지 제어 가능. 데이터 그룹을 블록이라 함. 블록당 100~500만 정도가 좋음.
+- numUserBlocks : 사용자 분할 블록 수 (default : 10)
+- numItemBlocks : 사용자 분할 블록 수 (default : 10)
+- maxIter : 총 방복 횟수 (default : 10)
+- checkpointInterval : 체크포인팅 주기. 노드 오류시 복구 빠르게 가능
+- seed : 임의 시드를 통해 재연 가능
+
 #### 28.2.3 예측 파라미터
 
-#### 28.2.4 ALS
+- 학습 완료된 모델이 어떻게 예측할 것인지 방법을 결정
+- coldStartStrategy만 제공됨 (NaN은 drop 처리)
+- cold start 문제는 ...
+  - 새로운 사용자나 아이템 이력이 없을 때도 문제이지만
+  - 모델 성과를 적절히 평가하지 못해서 최적의 모델 선택이 불가한 이슈도 있음
 
+#### 28.2.4 ALS
 
 #### Dataset Load
 ```scala
@@ -84,6 +115,7 @@ alsModel.recommendForAllUsers(10)
 alsModel.recommendForAllItems(10)
   .selectExpr("movieId", "explode(recommendations)").show()
 ```
+output :
 ```console
 +------+---------------+
 |userId|            col|
@@ -140,6 +172,9 @@ only showing top 20 rows
 
 ### 28.3 추천을 위한 평가기
 
+- 콜드스타트전략을 사용하는 경우 자동 모델 평가 가능
+- 회귀 문제와 비슷해서 평점의 예측값과 실젯값의 차이를 줄이는 최적화 수행 (RegressionEvaluator)
+
 #### RegressionEvaluator
 ```scala
 import org.apache.spark.ml.evaluation.RegressionEvaluator
@@ -160,6 +195,10 @@ rmse: Double = 2.0005399337316847
 
 ### 28.4 성과 평가지표
 
+- 추천 결과는 ...
+  - 표준 회귀 평가지표뿐만 아니라
+  - 추천에 특화된 평가지표를 활용하여 평가 가능 (상대적으로 더 정교함)
+
 #### 28.4.1 회귀 평가지표
 
 ```scala
@@ -179,6 +218,10 @@ metrics: org.apache.spark.mllib.evaluation.RegressionMetrics = org.apache.spark.
 
 #### 28.4.2 순위 평가지표
 
+- 추천 결과를 사용자가 표현한 실제 평점과 비교 가능
+- 이미 순위가 매겨진 아이템을 알고리즘이 다시 추천하는지 여부에 초점
+
+#### ActualData
 ```scala
 import org.apache.spark.mllib.evaluation.{RankingMetrics, RegressionMetrics}
 import org.apache.spark.sql.functions.{col, expr}
@@ -194,7 +237,7 @@ import org.apache.spark.sql.functions.{col, expr}
 perUserActual: org.apache.spark.sql.DataFrame = [userId: int, movies: array<int>]
 ```
 
-#### predictions
+#### PredictedData
 ```scala
 val perUserPredictions = predictions
   .orderBy(col("userId"), col("prediction").desc)
@@ -230,3 +273,6 @@ res20: Double = 0.45384615384615384
 ```
 
 ## 28.5 빈발 패턴 마이닝
+
+- 장바구니 분석 : 원시 데이터를 기반으로 연관 규칙을 찾는 알고리즘
+- FP-성장 알고리즘 구현됨
