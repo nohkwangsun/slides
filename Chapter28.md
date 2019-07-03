@@ -1,4 +1,34 @@
-### Load Data
+# 28 추천
+
+- 명시적 피드백 : 평점 매기기
+- 암시적 피드백 : 영화/음악 감상 이력 등
+
+### 28.1 활용 사례
+
+- 추천 예시
+  - 영화 추천 : 아마존, 넷플리스, HBO
+  - 과목 추천 : 과거 수강 신청 이력으로 추천
+
+- 교차최소제곱
+  - Spark 에서는 추천 알고리즘으로 Alternating Least Square를 제공
+  - Collaborative Filtering 기술을 활용하여 사용자의 과거 상호작용을 기반으로 추천 (암시적 피드백 가능)
+  - Spark ALS 는 명시적, 암묵적 피드백 모두 지원 가능
+
+- 빈발 패턴 마이닝
+  - 연관 규칙 (장바구니 분석)
+
+### 28.2 ALS 사용하여 CF 구현
+
+#### 28.2.1 하이퍼파라미터
+
+#### 28.2.2 학습 파라미터
+
+#### 28.2.3 예측 파라미터
+
+#### 28.2.4 ALS
+
+
+#### Dataset Load
 ```scala
 import org.apache.spark.ml.recommendation.ALS
 val ratings = spark.read.textFile("/data/sample_movielens_ratings.txt")
@@ -19,6 +49,7 @@ println(als.explainParams())
 val alsModel = als.fit(training)
 val predictions = alsModel.transform(test)
 ```
+output :
 ```console
 alpha: alpha for implicit preference (default: 1.0)
 checkpointInterval: set checkpoint interval (>= 1) or disable checkpoint (-1). E.g. 10 means that the cache will get checkpointed every 10 iterations. Note: this setting will be ignored if the checkpoint directory is not set in the SparkContext (default: 10)
@@ -46,9 +77,7 @@ alsModel: org.apache.spark.ml.recommendation.ALSModel = als_01f5bcdf6a33
 predictions: org.apache.spark.sql.DataFrame = [userId: int, movieId: int ... 3 more fields]
 ```
 
-
-
-### ALS
+#### ALS
 ```scala
 alsModel.recommendForAllUsers(10)
   .selectExpr("userId", "explode(recommendations)").show()
@@ -109,7 +138,9 @@ only showing top 20 rows
 only showing top 20 rows
 ```
 
-### RegressionEvaluator
+### 28.3 추천을 위한 평가기
+
+#### RegressionEvaluator
 ```scala
 import org.apache.spark.ml.evaluation.RegressionEvaluator
 val evaluator = new RegressionEvaluator()
@@ -119,6 +150,7 @@ val evaluator = new RegressionEvaluator()
 val rmse = evaluator.evaluate(predictions)
 println(s"Root-mean-square error = $rmse")
 ```
+output :
 ```console
 Root-mean-square error = 2.0005399337316847
 import org.apache.spark.ml.evaluation.RegressionEvaluator
@@ -126,7 +158,10 @@ evaluator: org.apache.spark.ml.evaluation.RegressionEvaluator = regEval_637b88a2
 rmse: Double = 2.0005399337316847
 ```
 
-### RegressionMetrics
+### 28.4 성과 평가지표
+
+#### 28.4.1 회귀 평가지표
+
 ```scala
 import org.apache.spark.mllib.evaluation.{
   RankingMetrics,
@@ -135,13 +170,15 @@ val regComparison = predictions.select("rating", "prediction")
   .rdd.map(x => (x.getFloat(0).toDouble,x.getFloat(1).toDouble))
 val metrics = new RegressionMetrics(regComparison)
 ```
+output :
 ```console
 import org.apache.spark.mllib.evaluation.{RankingMetrics, RegressionMetrics}
 regComparison: org.apache.spark.rdd.RDD[(Double, Double)] = MapPartitionsRDD[820] at map at <console>:41
 metrics: org.apache.spark.mllib.evaluation.RegressionMetrics = org.apache.spark.mllib.evaluation.RegressionMetrics@55a94851
 ```
 
-### predictions
+#### 28.4.2 순위 평가지표
+
 ```scala
 import org.apache.spark.mllib.evaluation.{RankingMetrics, RegressionMetrics}
 import org.apache.spark.sql.functions.{col, expr}
@@ -150,24 +187,26 @@ val perUserActual = predictions
   .groupBy("userId")
   .agg(expr("collect_set(movieId) as movies"))
 ```
+output :
 ```console
 import org.apache.spark.mllib.evaluation.{RankingMetrics, RegressionMetrics}
 import org.apache.spark.sql.functions.{col, expr}
 perUserActual: org.apache.spark.sql.DataFrame = [userId: int, movies: array<int>]
 ```
 
-### predictions
+#### predictions
 ```scala
 val perUserPredictions = predictions
   .orderBy(col("userId"), col("prediction").desc)
   .groupBy("userId")
   .agg(expr("collect_list(movieId) as movies"))
 ```
+output :
 ```console
 perUserPredictions: org.apache.spark.sql.DataFrame = [userId: int, movies: array<int>]
 ```
 
-### RankingMetrics
+#### RankingMetrics
 ```scala
 val perUserActualvPred = perUserActual.join(perUserPredictions, Seq("userId"))
   .map(row => (
@@ -181,7 +220,7 @@ perUserActualvPred: org.apache.spark.sql.Dataset[(Array[Integer], Array[Integer]
 ranks: org.apache.spark.mllib.evaluation.RankingMetrics[Integer] = org.apache.spark.mllib.evaluation.RankingMetrics@32c4c9b
 ```
 
-### Result
+#### Result
 ```scala
 ranks.meanAveragePrecision
 ranks.precisionAt(5)
@@ -189,3 +228,5 @@ ranks.precisionAt(5)
 ```console
 res20: Double = 0.45384615384615384
 ```
+
+## 28.5 빈발 패턴 마이닝
